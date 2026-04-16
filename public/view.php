@@ -1,11 +1,10 @@
 <?php
 session_start();
-require 'db.php'; 
-
 if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     header("Location: login.php");
     exit;
 }
+require '../config/db.php'; 
 
 // Fetch all products
 $stmt = $pdo->query("SELECT * FROM products");
@@ -22,12 +21,17 @@ foreach($all_products as $p) {
     }
 }
 $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
+
 // Fetch category counts for the chart
 $cat_stmt = $pdo->query("SELECT category, COUNT(*) as count FROM products GROUP BY category");
 $chart_data = $cat_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $labels = json_encode(array_column($chart_data, 'category'));
 $counts = json_encode(array_column($chart_data, 'count'));
+
+// Fetch logs directly for the integrated view
+$log_stmt = $pdo->query("SELECT * FROM activity_log ORDER BY created_at DESC LIMIT 50");
+$logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -42,19 +46,22 @@ $counts = json_encode(array_column($chart_data, 'count'));
         .product-img { width: 50px; height: 50px; object-fit: cover; border-radius: 8px; }
         .main-content { padding: 15px; }
         .badge-quantity { font-size: 0.85rem; padding: 0.4em 0.7em; }
-        
-        /* Low Stock Highlighting */
-        .low-stock-row {
-            background-color: #fff3f3 !important;
-            border-left: 4px solid #dc3545;
-        }
-        
-        tbody tr:hover {
-            background-color: #f8f9fa !important;
-            transition: 0.2s;
-        }
-
+        .low-stock-row { background-color: #fff3f3 !important; border-left: 4px solid #dc3545; }
+        tbody tr:hover { background-color: #f8f9fa !important; transition: 0.2s; }
         .header-actions .btn { margin-left: 5px; }
+        #logSection { border-top: 3px solid #0d6efd; transition: 0.3s; }
+        .log-table-container { max-height: 400px; overflow-y: auto; }
+
+        @media (max-width: 768px) {
+        .log-table-container {
+            max-height: 300px; /* Shorter height on mobile */
+        }
+        .header-actions .btn {
+            margin-bottom: 5px;
+            width: 48%; /* Side-by-side buttons on mobile */
+            font-size: 0.8rem;
+        }
+    }
     </style>
 </head>
 <body class="bg-light">
@@ -69,26 +76,38 @@ $counts = json_encode(array_column($chart_data, 'count'));
     </div>
 </nav>
 
-<div class="container main-content">
-    <div class="row align-items-center mb-4">
-        <div class="col-md-6">
+<div class="container-xl main-content">
+    <div class="row align-items-center mb-4 g-3">
+        <div class="col-12 col-lg-6 text-center text-lg-start">
             <h2 class="h4 mb-0 text-dark fw-bold">Live Inventory</h2>
-            <p class="text-muted small">Manage and track your stock in real-time</p>
+            <p class="text-muted small mb-0">Manage and track your stock in real-time</p>
         </div>
-        <div class="col-md-6 text-md-end header-actions">
-            <button onclick="toggleChart()" class="btn btn-outline-primary shadow-sm">📈 Analytics</button>
-            <button onclick="confirmDownload()" class="btn btn-outline-success shadow-sm">📊 Export CSV</button>
-            <a href="logs.php" class="btn btn-outline-dark shadow-sm">📜 View Logs</a>
-            <a href="index.html" class="btn btn-success shadow-sm">+ Add Product</a>
+        <div class="col-12 col-lg-6">
+            <div class="d-flex flex-wrap justify-content-center justify-content-lg-end gap-2">
+                <button onclick="toggleChart()" class="btn btn-outline-primary btn-sm px-3 shadow-sm">📈 Analytics</button>
+                <button onclick="confirmDownload()" class="btn btn-outline-success btn-sm px-3 shadow-sm">📊 Export CSV</button>
+                <button onclick="toggleLogs()" class="btn btn-outline-dark btn-sm px-3 shadow-sm">📜 View Logs</button>
+                <a href="index.html" class="btn btn-success btn-sm px-3 shadow-sm">+ Add Product</a>
+        </div>
+
+    <div id="chartSection" class="col-md-12 mb-4" style="display: none;">
+        <div class="card border-0 shadow-sm p-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-3 text-primary">📦 Stock Distribution by Category</h5>
+                <button type="button" class="btn-close mb-3" onclick="toggleChart()"></button>
+            </div>
+            <div style="height: 300px;">
+                <canvas id="categoryChart"></canvas>
+            </div>
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
+    <div class="row g-2 g-md-3 mb-4">
+        <div class="col-6 col-lg-3">
             <div class="card border-0 shadow-sm bg-primary text-white h-100">
-                <div class="card-body p-3">
+                <div class="card-body p-2 p-md-3">
                     <small class="opacity-75">Unique Items</small>
-                    <div class="h3 fw-bold mb-0"><?= $total_items ?></div>
+                    <div class="h4 fw-bold mb-0"><?= $total_items ?></div>
                 </div>
             </div>
         </div>
@@ -109,19 +128,6 @@ $counts = json_encode(array_column($chart_data, 'count'));
             </div>
         </div>
     </div>
-    <div id="chartSection" class="col-md-12 mb-4" style="display: none;">
-    <div class="card border-0 shadow-sm p-4">
-        <div class="d-flex justify-content-between align-items-center">
-                    <h5 class="fw-bold mb-3 text-primary">📦 Stock Distribution by Category</h5>
-                    <button type="button" class="btn-close mb-3" onclick="toggleChart()"></button>
-                </div>
-                <div style="height: 300px;">
-                    <canvas id="categoryChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <div class="row g-3 mb-3">
         <div class="col-md-8">
@@ -152,23 +158,23 @@ $counts = json_encode(array_column($chart_data, 'count'));
         </div>
     </div>
 
-    <div class="card border-0 shadow-sm overflow-hidden">
+    <div class="card border-0 shadow-sm overflow-hidden mb-4">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0"style="min-width: 650px;">
                 <thead class="table-light">
                     <tr>
-                        <th class="ps-3">Product Detail</th>
-                        <th>Stock Level</th>
-                        <th>Unit Price</th>
-                        <th class="text-end pe-3">Actions</th>
+                        <th class="ps-3" style="width: 40%;">Product Detail</th>
+                        <th style="width: 20%;">Stock Level</th>
+                        <th style="width: 20%;">Unit Price</th>
+                        <th class="text-end pe-3" style="width: 20%;">Actions</th>
                     </tr>
                 </thead>
-                <tbody id="productTableBody" class="border-top-0">
+                <tbody id="productTableBody">
                     <?php foreach ($all_products as $row): ?>
                     <tr class="<?= $row['quantity'] < 5 ? 'low-stock-row' : '' ?>">
                         <td class="ps-3">
                             <div class="d-flex align-items-center">
-                                <img src="uploads/<?= $row['image'] ?>" class="product-img me-3 border" onerror="this.src='https://via.placeholder.com/50'">
+                                <img src="../uploads/<?= htmlspecialchars($row['image']) ?>" class="product-img me-3 border" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=<?= urlencode($row['name']) ?>&background=random';">
                                 <div>
                                     <div class="fw-semibold text-dark"><?= htmlspecialchars($row['name']) ?></div>
                                     <span class="badge bg-light text-secondary border fw-normal" style="font-size: 0.7rem;">
@@ -187,7 +193,7 @@ $counts = json_encode(array_column($chart_data, 'count'));
                             <div class="btn-group">
                                 <a href="edit.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-primary">Edit</a>
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
-                                    <a href="delete.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</a>
+                                    <a href="../includes/delete.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</a>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -197,105 +203,65 @@ $counts = json_encode(array_column($chart_data, 'count'));
             </table>
         </div>
     </div>
+
+
+    <div id="logSection" class="col-md-12 mt-4 mb-5" style="display: none;">
+        <div class="card border-0 shadow-lg p-4 bg-white">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="fw-bold text-dark mb-0">📜 Activity Audit Trail</h4>
+                <button type="button" class="btn-close" onclick="toggleLogs()"></button>
+            </div>
+            <div class="log-table-container border rounded bg-light" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Action</th>
+                            <th>Product</th>
+                            <th>Details</th>
+                            <th class="text-end">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                            <?php foreach ($logs as $log): ?>
+                            <tr>
+                                <td><span class="badge bg-secondary"><?= htmlspecialchars($log['action_type']) ?></span></td>
+                                <td class="fw-bold"><?= htmlspecialchars($log['product_name']) ?></td>
+                                <td class="text-muted small"><?= htmlspecialchars($log['details']) ?></td>
+                                <td class="text-end small"><?= date('M j, H:i', strtotime($log['created_at'])) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// ADMIN CHECK FOR JAVASCRIPT
 const IS_ADMIN = <?= ($_SESSION['role'] === 'admin') ? 'true' : 'false' ?>;
 
-// 1. Export Confirmation
-function confirmDownload() {
-    Swal.fire({
-        title: 'Generate CSV Report?',
-        text: "Are you sure you want to download the current inventory data?",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#198754',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Yes, Download',
-        cancelButtonText: 'Cancel'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            window.location.href = 'export.php';
-        }
-    });
-}
-
-// 2. Helper Function to Redraw Table
-function updateTable(data) {
-    let body = document.getElementById('productTableBody');
-    let html = '';
-
-    if (!data || data.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">No items found.</td></tr>';
-        return;
+// Toggle Activity Logs
+function toggleLogs() {
+    const logDiv = document.getElementById('logSection');
+    if (logDiv.style.display === 'none') {
+        logDiv.style.display = 'block';
+        logDiv.scrollIntoView({ behavior: 'smooth' });
+    } else {
+        logDiv.style.display = 'none';
     }
-
-    data.forEach(item => {
-        let lowStockClass = item.quantity < 5 ? 'low-stock-row' : '';
-        let badgeClass = item.quantity < 5 ? 'bg-danger' : 'bg-dark';
-        let deleteBtn = IS_ADMIN ? `<a href="delete.php?id=${item.id}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</a>` : '';
-
-        html += `
-        <tr class="${lowStockClass}">
-            <td class="ps-3">
-                <div class="d-flex align-items-center">
-                    <img src="uploads/${item.image}" class="product-img me-3 border" onerror="this.src='https://via.placeholder.com/50'">
-                    <div>
-                        <div class="fw-semibold text-dark">${item.name}</div>
-                        <span class="badge bg-light text-secondary border fw-normal" style="font-size: 0.7rem;">${item.category}</span>
-                    </div>
-                </div>
-            </td>
-            <td><span class="badge badge-quantity ${badgeClass}">${item.quantity} in stock</span></td>
-            <td class="fw-bold text-success">$${parseFloat(item.price).toFixed(2)}</td>
-            <td class="text-end pe-3">
-                <div class="btn-group">
-                    <a href="edit.php?id=${item.id}" class="btn btn-sm btn-outline-primary">Edit</a>
-                    ${deleteBtn}
-                </div>
-            </td>
-        </tr>`;
-    });
-    body.innerHTML = html;
 }
-
-// 3. Search and Filter Logic
-document.getElementById('ajaxSearch').addEventListener('input', function() {
-    fetch('search_api.php?q=' + encodeURIComponent(this.value))
-        .then(res => res.json())
-        .then(data => updateTable(data));
-});
-
-document.querySelectorAll('.filter-opt').forEach(opt => {
-    opt.addEventListener('click', function(e) {
-        e.preventDefault();
-        let category = this.getAttribute('data-category');
-        document.getElementById('categoryDropdown').innerText = (category === 'all') ? '📂 All Items' : '📂 ' + category;
-        
-        let url = (category === 'all') ? 'search_api.php?q=' : 'search_api.php?cat=' + encodeURIComponent(category);
-        fetch(url).then(res => res.json()).then(data => updateTable(data));
-    });
-});
-let myChart = null; // Global variable to track chart status
-
-// Function to handle showing/hiding the section
+// Analytics Toggle
+let myChart = null;
 function toggleChart() {
     const chartDiv = document.getElementById('chartSection');
-    if (chartDiv.style.display === 'none') {
-        chartDiv.style.display = 'block';
-        renderInventoryChart(); // Only draw the chart when opened
-        chartDiv.scrollIntoView({ behavior: 'smooth' });
-    } else {
-        chartDiv.style.display = 'none';
-    }
+    chartDiv.style.display = (chartDiv.style.display === 'none') ? 'block' : 'none';
+    if(chartDiv.style.display === 'block') renderInventoryChart();
 }
 
-// Function to actually draw the chart
 function renderInventoryChart() {
-    if (myChart !== null) return; // Prevent creating multiple charts
-
+    if (myChart !== null) return;
     const ctx = document.getElementById('categoryChart').getContext('2d');
     myChart = new Chart(ctx, {
         type: 'bar',
@@ -305,22 +271,73 @@ function renderInventoryChart() {
                 label: 'Items',
                 data: <?= $counts ?>,
                 backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b'],
-                borderRadius: 6,
-                barThickness: 35
+                borderRadius: 6
             }]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                y: { beginAtZero: true, grid: { color: '#f0f0f0' } },
-                x: { grid: { display: false } }
-            }
-        }
+        options: { responsive: true, maintainAspectRatio: false }
     });
 }
 
+// CSV Export
+function confirmDownload() {
+    Swal.fire({
+        title: 'Generate CSV?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#198754',
+        confirmButtonText: 'Download'
+    }).then((result) => {
+        if (result.isConfirmed) window.location.href = '../includes/export.php';
+    });
+}
+
+// Search & Filter Logic (AJAX)
+function updateTable(data) {
+    let body = document.getElementById('productTableBody');
+    let html = '';
+    if (!data || data.length === 0) {
+        body.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">No items found.</td></tr>';
+        return;
+    }
+    data.forEach(item => {
+        let lowStockClass = item.quantity < 5 ? 'low-stock-row' : '';
+        let badgeClass = item.quantity < 5 ? 'bg-danger' : 'bg-dark';
+        let deleteBtn = IS_ADMIN ? `<a href="../includes/delete.php?id=${item.id}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</a>` : '';
+        html += `
+        <tr class="${lowStockClass}">
+            <td class="ps-3">
+                <div class="d-flex align-items-center">
+                    <img src="../uploads/${item.image}" class="product-img me-3 border" onerror="this.src='https://via.placeholder.com/50'">
+                    <div>
+                        <div class="fw-semibold text-dark">${item.name}</div>
+                        <span class="badge bg-light text-secondary border fw-normal" style="font-size: 0.7rem;">${item.category}</span>
+                    </div>
+                </div>
+            </td>
+            <td><span class="badge badge-quantity ${badgeClass}">${item.quantity} in stock</span></td>
+            <td class="fw-bold text-success">$${parseFloat(item.price).toFixed(2)}</td>
+            <td class="text-end pe-3">
+                <div class="btn-group"><a href="edit.php?id=${item.id}" class="btn btn-sm btn-outline-primary">Edit</a>${deleteBtn}</div>
+            </td>
+        </tr>`;
+    });
+    body.innerHTML = html;
+}
+
+document.getElementById('ajaxSearch').addEventListener('input', function() {
+    fetch('../includes/search_api.php?q=' + encodeURIComponent(this.value))
+        .then(res => res.json()).then(data => updateTable(data));
+});
+
+document.querySelectorAll('.filter-opt').forEach(opt => {
+    opt.addEventListener('click', function(e) {
+        e.preventDefault();
+        let cat = this.getAttribute('data-category');
+        document.getElementById('categoryDropdown').innerText = (cat === 'all') ? '📂 All Items' : '📂 ' + cat;
+        let url = (cat === 'all') ? '../includes/search_api.php?q=' : '../includes/search_api.php?cat=' + encodeURIComponent(cat);
+        fetch(url).then(res => res.json()).then(data => updateTable(data));
+    });
+});
 </script>
 </body>
 </html>

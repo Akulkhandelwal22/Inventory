@@ -1,7 +1,7 @@
 <?php
 session_start();
 if (!isset($_SESSION['logged_in'])) {
-    header("Location: login.php");
+    header("Location: ../public/view.php");
     exit;
 }
 $price = (float)$_POST['price'];

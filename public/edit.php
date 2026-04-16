@@ -11,8 +11,7 @@ if ($_SESSION['role'] !== 'admin') {
     die("Access Denied: You do not have permission to perform this action.");
 }
 
-require 'db.php'; 
-
+require '../config/db.php';
 // 2. Fetch Product Data
 if (!isset($_GET['id'])) { die("ID missing!"); }
 $id = $_GET['id'];
@@ -47,7 +46,7 @@ if (!$product) { die("Product not found!"); }
                     <h5 class="mb-0 fw-bold text-center">Edit Product</h5>
                 </div>
                 <div class="card-body p-4">
-                    <form action="update.php" method="POST" enctype="multipart/form-data">
+                    <form action="../includes/update.php" method="POST" enctype="multipart/form-data">
                         <input type="hidden" name="id" value="<?= $product['id'] ?>">
                         
                         <div class="text-center mb-4">

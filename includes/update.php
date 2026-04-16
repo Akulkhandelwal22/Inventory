@@ -1,13 +1,14 @@
 <?php
 session_start();
 
-// 1. Security Check
+// 1. Security Check: Redirect unauthorized users to login
 if (!isset($_SESSION['logged_in'])) { 
-    header("Location: login.php"); 
+    header("Location: ../public/login.php"); 
     exit; 
 }
 
-require 'db.php';
+// Correct path to centralized config
+require '../config/db.php';
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     
@@ -27,7 +28,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         die("Error: SKU cannot be empty.");
     }
 
-    // 3. Fetch current data for comparison
+    // 3. Fetch current data for comparison (to log specific changes)
     $stmt = $pdo->prepare("SELECT * FROM products WHERE id = ?");
     $stmt->execute([$id]);
     $old = $stmt->fetch();
@@ -43,14 +44,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         // 4. Handle Image Upload
         $image_name = $old['image']; 
         if (!empty($_FILES['product_image']['name'])) {
-            $new_image_name = time() . "_" . $_FILES['product_image']['name'];
-            $target_dir = __DIR__ . "/uploads/";
+            // Sanitize filename
+            $new_image_name = time() . "_" . preg_replace("/[^a-zA-Z0-9.]/", "_", $_FILES['product_image']['name']);
+            $target_dir = __DIR__ . "/../uploads/";
             
             if (move_uploaded_file($_FILES['product_image']['tmp_name'], $target_dir . $new_image_name)) {
                 $image_name = $new_image_name;
                 $changes[] = "Image updated";
                 
-                // Delete old image if it wasn't the default
+                // Cleanup: Delete old image if it wasn't the default placeholder
                 if ($old['image'] != "no-image.jpg" && file_exists($target_dir . $old['image'])) {
                     unlink($target_dir . $old['image']);
                 }
@@ -71,7 +73,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 ':id'  => $id
             ]);
 
-            // 6. Record Transactions & Logs
+            // 6. Record Transactions (if quantity changed)
             if ($old['quantity'] != $new_qty) {
                 $diff = $new_qty - $old['quantity'];
                 $type = ($diff > 0) ? 'IN' : 'OUT';
@@ -79,13 +81,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     recordTransaction($pdo, $id, $new_name, $type, abs($diff), "Manual edit");
                 }
             }
-
-            if (!empty($changes) && function_exists('logActivity')) {
-                logActivity($pdo, 'UPDATE', $new_name, implode(" | ", $changes));
+            if ($old) {
+                if (!empty($changes) && function_exists('logActivity')) {
+                    logActivity($pdo, 'UPDATE', $new_name, implode(" | ", $changes));
+                }
             }
 
-            // Success Redirect
-            header("Location: view.php?updated=1");
+            // Success Redirect to public dashboard
+            header("Location: ../public/view.php?updated=1");
             exit();
 
         } catch (Exception $e) {

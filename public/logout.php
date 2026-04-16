@@ -16,7 +16,13 @@ if (ini_get("session.use_cookies")) {
 // 3. Finally, destroy the session.
 session_destroy();
 
-// 4. Send the user back to the login page
+// 4. Prevent the browser from using a cached version of the previous page
+header("Cache-Control: no-cache, no-store, must-revalidate"); // HTTP 1.1.
+header("Pragma: no-cache"); // HTTP 1.0.
+header("Expires: 0"); // Proxies.
+
+// 5. Send the user back to the login page
+// Since logout.php and login.php are both in /public, no prefix is needed.
 header("Location: login.php");
 exit;
 ?>
