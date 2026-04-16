@@ -48,20 +48,20 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
         .badge-quantity { font-size: 0.85rem; padding: 0.4em 0.7em; }
         .low-stock-row { background-color: #fff3f3 !important; border-left: 4px solid #dc3545; }
         tbody tr:hover { background-color: #f8f9fa !important; transition: 0.2s; }
-        .header-actions .btn { margin-left: 5px; }
+        
+        /* Log Styling */
         #logSection { border-top: 3px solid #0d6efd; transition: 0.3s; }
-        .log-table-container { max-height: 400px; overflow-y: auto; }
+        .log-table-container { max-height: 400px; overflow-y: auto; background: #fff; }
+        .log-badge { font-weight: 500; letter-spacing: 0.3px; }
 
         @media (max-width: 768px) {
-        .log-table-container {
-            max-height: 300px; /* Shorter height on mobile */
+            .log-table-container { max-height: 300px; }
+            .header-actions .btn {
+                margin-bottom: 5px;
+                width: 48%; 
+                font-size: 0.8rem;
+            }
         }
-        .header-actions .btn {
-            margin-bottom: 5px;
-            width: 48%; /* Side-by-side buttons on mobile */
-            font-size: 0.8rem;
-        }
-    }
     </style>
 </head>
 <body class="bg-light">
@@ -70,7 +70,7 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="container">
         <a class="navbar-brand fw-bold" href="view.php">📦 IMS PRO</a>
         <div class="d-flex align-items-center">
-            <span class="text-white-50 me-3 small">Logged in as: <?= htmlspecialchars($_SESSION['role']) ?></span>
+            <span class="text-white-50 me-3 small d-none d-sm-inline">Logged in as: <?= htmlspecialchars($_SESSION['role']) ?></span>
             <a href="logout.php" class="btn btn-sm btn-danger px-3">Logout</a>
         </div>
     </div>
@@ -83,12 +83,14 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
             <p class="text-muted small mb-0">Manage and track your stock in real-time</p>
         </div>
         <div class="col-12 col-lg-6">
-            <div class="d-flex flex-wrap justify-content-center justify-content-lg-end gap-2">
+            <div class="d-flex flex-wrap justify-content-center justify-content-lg-end gap-2 header-actions">
                 <button onclick="toggleChart()" class="btn btn-outline-primary btn-sm px-3 shadow-sm">📈 Analytics</button>
                 <button onclick="confirmDownload()" class="btn btn-outline-success btn-sm px-3 shadow-sm">📊 Export CSV</button>
                 <button onclick="toggleLogs()" class="btn btn-outline-dark btn-sm px-3 shadow-sm">📜 View Logs</button>
                 <a href="index.html" class="btn btn-success btn-sm px-3 shadow-sm">+ Add Product</a>
+            </div>
         </div>
+    </div>
 
     <div id="chartSection" class="col-md-12 mb-4" style="display: none;">
         <div class="card border-0 shadow-sm p-4">
@@ -111,19 +113,19 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-lg-3">
             <div class="card border-0 shadow-sm <?= $low_stock_count > 0 ? 'bg-danger' : 'bg-secondary' ?> text-white h-100">
-                <div class="card-body p-3">
+                <div class="card-body p-2 p-md-3">
                     <small class="opacity-75">Low Stock Alert</small>
-                    <div class="h3 fw-bold mb-0"><?= $low_stock_count ?></div>
+                    <div class="h4 fw-bold mb-0"><?= $low_stock_count ?></div>
                 </div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-12 col-lg-3">
             <div class="card border-0 shadow-sm bg-dark text-white h-100">
-                <div class="card-body p-3">
+                <div class="card-body p-2 p-md-3">
                     <small class="opacity-75">Top Unit Price</small>
-                    <div class="h3 fw-bold mb-0">$<?= number_format($max_price, 2) ?></div>
+                    <div class="h4 fw-bold mb-0">$<?= number_format($max_price, 2) ?></div>
                 </div>
             </div>
         </div>
@@ -160,7 +162,7 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
 
     <div class="card border-0 shadow-sm overflow-hidden mb-4">
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0"style="min-width: 650px;">
+            <table class="table table-hover align-middle mb-0" style="min-width: 650px;">
                 <thead class="table-light">
                     <tr>
                         <th class="ps-3" style="width: 40%;">Product Detail</th>
@@ -204,14 +206,13 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-
     <div id="logSection" class="col-md-12 mt-4 mb-5" style="display: none;">
         <div class="card border-0 shadow-lg p-4 bg-white">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h4 class="fw-bold text-dark mb-0">📜 Activity Audit Trail</h4>
                 <button type="button" class="btn-close" onclick="toggleLogs()"></button>
             </div>
-            <div class="log-table-container border rounded bg-light" style="max-height: 400px; overflow-y: auto;">
+            <div class="log-table-container border rounded shadow-sm">
                 <table class="table table-sm table-hover mb-0">
                     <thead class="table-light sticky-top">
                         <tr>
@@ -222,14 +223,27 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
                         </tr>
                     </thead>
                     <tbody>
-                            <?php foreach ($logs as $log): ?>
+                        <?php if(empty($logs)): ?>
+                            <tr><td colspan="4" class="text-center py-4 text-muted">No logs found.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($logs as $log): 
+                                // Color Logic
+                                $badgeColor = 'bg-secondary';
+                                $act = strtolower($log['action_type']);
+                                if (strpos($act, 'add') !== false || strpos($act, 'creat') !== false) $badgeColor = 'bg-success';
+                                elseif (strpos($act, 'edit') !== false || strpos($act, 'updat') !== false) $badgeColor = 'bg-primary';
+                                elseif (strpos($act, 'delet') !== false || strpos($act, 'remov') !== false) $badgeColor = 'bg-danger';
+                            ?>
                             <tr>
-                                <td><span class="badge bg-secondary"><?= htmlspecialchars($log['action_type']) ?></span></td>
-                                <td class="fw-bold"><?= htmlspecialchars($log['product_name']) ?></td>
+                                <td><span class="badge <?= $badgeColor ?> log-badge"><?= htmlspecialchars($log['action_type']) ?></span></td>
+                                <td class="fw-bold text-dark"><?= htmlspecialchars($log['product_name']) ?></td>
                                 <td class="text-muted small"><?= htmlspecialchars($log['details']) ?></td>
-                                <td class="text-end small"><?= date('M j, H:i', strtotime($log['created_at'])) ?></td>
+                                <td class="text-end small text-secondary fw-medium">
+                                    <?= date('M j, H:i', strtotime($log['created_at'])) ?>
+                                </td>
                             </tr>
                             <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
@@ -242,7 +256,6 @@ $logs = $log_stmt->fetchAll(PDO::FETCH_ASSOC);
 <script>
 const IS_ADMIN = <?= ($_SESSION['role'] === 'admin') ? 'true' : 'false' ?>;
 
-// Toggle Activity Logs
 function toggleLogs() {
     const logDiv = document.getElementById('logSection');
     if (logDiv.style.display === 'none') {
@@ -252,7 +265,7 @@ function toggleLogs() {
         logDiv.style.display = 'none';
     }
 }
-// Analytics Toggle
+
 let myChart = null;
 function toggleChart() {
     const chartDiv = document.getElementById('chartSection');
@@ -278,7 +291,6 @@ function renderInventoryChart() {
     });
 }
 
-// CSV Export
 function confirmDownload() {
     Swal.fire({
         title: 'Generate CSV?',
@@ -291,7 +303,6 @@ function confirmDownload() {
     });
 }
 
-// Search & Filter Logic (AJAX)
 function updateTable(data) {
     let body = document.getElementById('productTableBody');
     let html = '';
