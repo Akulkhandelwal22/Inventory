@@ -22,6 +22,12 @@ foreach($all_products as $p) {
     }
 }
 $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
+// Fetch category counts for the chart
+$cat_stmt = $pdo->query("SELECT category, COUNT(*) as count FROM products GROUP BY category");
+$chart_data = $cat_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$labels = json_encode(array_column($chart_data, 'category'));
+$counts = json_encode(array_column($chart_data, 'count'));
 ?>
 
 <!DOCTYPE html>
@@ -30,26 +36,25 @@ $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IMS | Smart Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         .product-img { width: 50px; height: 50px; object-fit: cover; border-radius: 8px; }
         .main-content { padding: 15px; }
-        .low-stock-row { background-color: #fff3f3 !important; }
         .badge-quantity { font-size: 0.85rem; padding: 0.4em 0.7em; }
-        @media (max-width: 576px) {
-            .btn-group { display: flex; flex-direction: column; gap: 5px; }
-        }
-        /* Makes the low stock rows have a subtle red pulse or glow */
+        
+        /* Low Stock Highlighting */
         .low-stock-row {
             background-color: #fff3f3 !important;
-            border-left: 4px solid #dc3545; /* Red indicator on the left */
+            border-left: 4px solid #dc3545;
         }
         
-        /* Hover effect to make rows feel interactive */
         tbody tr:hover {
-            background-color: #355575 !important;
-            cursor: pointer;
+            background-color: #f8f9fa !important;
+            transition: 0.2s;
         }
+
+        .header-actions .btn { margin-left: 5px; }
     </style>
 </head>
 <body class="bg-light">
@@ -58,19 +63,22 @@ $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
     <div class="container">
         <a class="navbar-brand fw-bold" href="view.php">📦 IMS PRO</a>
         <div class="d-flex align-items-center">
-            <a href="logout.php" class="btn btn-sm btn-danger">Logout</a>
+            <span class="text-white-50 me-3 small">Logged in as: <?= htmlspecialchars($_SESSION['role']) ?></span>
+            <a href="logout.php" class="btn btn-sm btn-danger px-3">Logout</a>
         </div>
     </div>
 </nav>
 
 <div class="container main-content">
     <div class="row align-items-center mb-4">
-        <div class="col-6">
-            <h2 class="h4 mb-0 text-dark">Live Inventory</h2>
+        <div class="col-md-6">
+            <h2 class="h4 mb-0 text-dark fw-bold">Live Inventory</h2>
+            <p class="text-muted small">Manage and track your stock in real-time</p>
         </div>
-        <div class="col-6 text-end">
-            <a href="export.php" class="btn btn-outline-success shadow-sm me-2">📊 Export CSV</a>
-            <a href="logs.php" class="btn btn-outline-dark shadow-sm me-2">📜 View Logs</a>
+        <div class="col-md-6 text-md-end header-actions">
+            <button onclick="toggleChart()" class="btn btn-outline-primary shadow-sm">📈 Analytics</button>
+            <button onclick="confirmDownload()" class="btn btn-outline-success shadow-sm">📊 Export CSV</button>
+            <a href="logs.php" class="btn btn-outline-dark shadow-sm">📜 View Logs</a>
             <a href="index.html" class="btn btn-success shadow-sm">+ Add Product</a>
         </div>
     </div>
@@ -81,14 +89,6 @@ $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
                 <div class="card-body p-3">
                     <small class="opacity-75">Unique Items</small>
                     <div class="h3 fw-bold mb-0"><?= $total_items ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card border-0 shadow-sm bg-success text-white h-100">
-                <div class="card-body p-3">
-                    <small class="opacity-75">Stock Value</small>
-                    <div class="h3 fw-bold mb-0">$<?= number_format($total_inventory_value, 2) ?></div>
                 </div>
             </div>
         </div>
@@ -109,25 +109,45 @@ $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
             </div>
         </div>
     </div>
-    <div class="dropdown mb-3">
-    <button class="btn btn-dark dropdown-toggle" type="button" id="categoryDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-        📂 Filter by Category
-    </button>
-    <ul class="dropdown-menu shadow border-0" aria-labelledby="categoryDropdown">
-        <li><a class="dropdown-item filter-opt" href="#" data-category="all">All Items</a></li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item filter-opt" href="#" data-category="Electronics">Electronics</a></li>
-        <li><a class="dropdown-item filter-opt" href="#" data-category="Furniture">Furniture</a></li>
-        <li><a class="dropdown-item filter-opt" href="#" data-category="Stationery">Stationery</a></li>
-        <li><a class="dropdown-item filter-opt" href="#" data-category="Food & Beverage">Food</a></li>
-        <li><a class="dropdown-item filter-opt" href="#" data-category="Other">Other</a></li>
-    </ul>
-</div>
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body p-2">
-            <div class="input-group">
-                <span class="input-group-text bg-transparent border-0">🔍</span>
-                <input type="text" id="ajaxSearch" class="form-control border-0 shadow-none" placeholder="Search inventory...">
+    <div id="chartSection" class="col-md-12 mb-4" style="display: none;">
+    <div class="card border-0 shadow-sm p-4">
+        <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-3 text-primary">📦 Stock Distribution by Category</h5>
+                    <button type="button" class="btn-close mb-3" onclick="toggleChart()"></button>
+                </div>
+                <div style="height: 300px;">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-2">
+                    <div class="input-group">
+                        <span class="input-group-text bg-transparent border-0">🔍</span>
+                        <input type="text" id="ajaxSearch" class="form-control border-0 shadow-none" placeholder="Search product name...">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="dropdown h-100">
+                <button class="btn btn-white bg-white w-100 shadow-sm dropdown-toggle border-0 py-2" type="button" id="categoryDropdown" data-bs-toggle="dropdown">
+                    📂 Filter Category
+                </button>
+                <ul class="dropdown-menu shadow border-0 w-100">
+                    <li><a class="dropdown-item filter-opt" href="#" data-category="all">All Items</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item filter-opt" href="#" data-category="Electronics">Electronics</a></li>
+                    <li><a class="dropdown-item filter-opt" href="#" data-category="Furniture">Furniture</a></li>
+                    <li><a class="dropdown-item filter-opt" href="#" data-category="Stationery">Stationery</a></li>
+                    <li><a class="dropdown-item filter-opt" href="#" data-category="Food & Beverage">Food & Beverage</a></li>
+                    <li><a class="dropdown-item filter-opt" href="#" data-category="Other">Other</a></li>
+                </ul>
             </div>
         </div>
     </div>
@@ -148,7 +168,7 @@ $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
                     <tr class="<?= $row['quantity'] < 5 ? 'low-stock-row' : '' ?>">
                         <td class="ps-3">
                             <div class="d-flex align-items-center">
-                                <img src="uploads/<?= $row['image'] ?>" class="product-img me-3 border">
+                                <img src="uploads/<?= $row['image'] ?>" class="product-img me-3 border" onerror="this.src='https://via.placeholder.com/50'">
                                 <div>
                                     <div class="fw-semibold text-dark"><?= htmlspecialchars($row['name']) ?></div>
                                     <span class="badge bg-light text-secondary border fw-normal" style="font-size: 0.7rem;">
@@ -166,11 +186,10 @@ $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
                         <td class="text-end pe-3">
                             <div class="btn-group">
                                 <a href="edit.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-primary">Edit</a>
-                                
                                 <?php if ($_SESSION['role'] === 'admin'): ?>
                                     <a href="delete.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</a>
-                            <?php endif; ?>
-                           </div>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -182,7 +201,28 @@ $max_price = $total_items > 0 ? max(array_column($all_products, 'price')) : 0;
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// 1. Helper Function to Redraw the Table (Prevents Duplication)
+// ADMIN CHECK FOR JAVASCRIPT
+const IS_ADMIN = <?= ($_SESSION['role'] === 'admin') ? 'true' : 'false' ?>;
+
+// 1. Export Confirmation
+function confirmDownload() {
+    Swal.fire({
+        title: 'Generate CSV Report?',
+        text: "Are you sure you want to download the current inventory data?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#198754',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, Download',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = 'export.php';
+        }
+    });
+}
+
+// 2. Helper Function to Redraw Table
 function updateTable(data) {
     let body = document.getElementById('productTableBody');
     let html = '';
@@ -195,28 +235,25 @@ function updateTable(data) {
     data.forEach(item => {
         let lowStockClass = item.quantity < 5 ? 'low-stock-row' : '';
         let badgeClass = item.quantity < 5 ? 'bg-danger' : 'bg-dark';
-        
+        let deleteBtn = IS_ADMIN ? `<a href="delete.php?id=${item.id}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</a>` : '';
+
         html += `
         <tr class="${lowStockClass}">
             <td class="ps-3">
                 <div class="d-flex align-items-center">
-                    <img src="uploads/${item.image}" class="product-img me-3 border">
+                    <img src="uploads/${item.image}" class="product-img me-3 border" onerror="this.src='https://via.placeholder.com/50'">
                     <div>
                         <div class="fw-semibold text-dark">${item.name}</div>
-                        <span class="badge bg-light text-secondary border fw-normal" style="font-size: 0.7rem;">
-                            ${item.category}
-                        </span>
+                        <span class="badge bg-light text-secondary border fw-normal" style="font-size: 0.7rem;">${item.category}</span>
                     </div>
                 </div>
             </td>
-            <td>
-                <span class="badge badge-quantity ${badgeClass}">${item.quantity} in stock</span>
-            </td>
+            <td><span class="badge badge-quantity ${badgeClass}">${item.quantity} in stock</span></td>
             <td class="fw-bold text-success">$${parseFloat(item.price).toFixed(2)}</td>
             <td class="text-end pe-3">
                 <div class="btn-group">
                     <a href="edit.php?id=${item.id}" class="btn btn-sm btn-outline-primary">Edit</a>
-                    <a href="delete.php?id=${item.id}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete?')">Delete</a>
+                    ${deleteBtn}
                 </div>
             </td>
         </tr>`;
@@ -224,36 +261,66 @@ function updateTable(data) {
     body.innerHTML = html;
 }
 
-// 2. Live Search Event
+// 3. Search and Filter Logic
 document.getElementById('ajaxSearch').addEventListener('input', function() {
-    let query = this.value;
-    fetch('search_api.php?q=' + encodeURIComponent(query))
+    fetch('search_api.php?q=' + encodeURIComponent(this.value))
         .then(res => res.json())
-        .then(data => updateTable(data))
-        .catch(err => console.error('Search Error:', err));
+        .then(data => updateTable(data));
 });
 
-// 3. Category Filter Event
 document.querySelectorAll('.filter-opt').forEach(opt => {
     opt.addEventListener('click', function(e) {
-        e.preventDefault(); // Stop the page from jumping
-        
+        e.preventDefault();
         let category = this.getAttribute('data-category');
-        let dropdownBtn = document.getElementById('categoryDropdown');
+        document.getElementById('categoryDropdown').innerText = (category === 'all') ? '📂 All Items' : '📂 ' + category;
         
-        // Update the Dropdown Button Text
-        dropdownBtn.innerText = (category === 'all') ? '📂 Filter by Category' : '📂 ' + category;
-        
-        // Use your existing search_api logic
         let url = (category === 'all') ? 'search_api.php?q=' : 'search_api.php?cat=' + encodeURIComponent(category);
-
-        fetch(url)
-            .then(res => res.json())
-            .then(data => updateTable(data)) // Reuses your existing updateTable function
-            .catch(err => console.error('Filter Error:', err));
+        fetch(url).then(res => res.json()).then(data => updateTable(data));
     });
 });
-</script>
+let myChart = null; // Global variable to track chart status
+
+// Function to handle showing/hiding the section
+function toggleChart() {
+    const chartDiv = document.getElementById('chartSection');
+    if (chartDiv.style.display === 'none') {
+        chartDiv.style.display = 'block';
+        renderInventoryChart(); // Only draw the chart when opened
+        chartDiv.scrollIntoView({ behavior: 'smooth' });
+    } else {
+        chartDiv.style.display = 'none';
+    }
+}
+
+// Function to actually draw the chart
+function renderInventoryChart() {
+    if (myChart !== null) return; // Prevent creating multiple charts
+
+    const ctx = document.getElementById('categoryChart').getContext('2d');
+    myChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: <?= $labels ?>,
+            datasets: [{
+                label: 'Items',
+                data: <?= $counts ?>,
+                backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b'],
+                borderRadius: 6,
+                barThickness: 35
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#f0f0f0' } },
+                x: { grid: { display: false } }
+            }
+        }
+    });
+}
+
 </script>
 </body>
 </html>
